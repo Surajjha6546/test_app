@@ -2,7 +2,7 @@ import streamlit as st
 import math
 
 # -----------------------------------
-# App Configuration
+# Streamlit Page Configuration
 # -----------------------------------
 st.set_page_config(page_title="Casio fx-991EX", page_icon="🧮", layout="centered")
 
@@ -38,13 +38,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🧮 Casio fx-991EX — Scientific Calculator")
-st.caption("Built with Streamlit • Degree Mode • Python Powered")
+st.caption("Built with Streamlit • Degree Mode • Replay Memory")
 
 # -----------------------------------
-# Initialize Session State
+# Initialize State
 # -----------------------------------
 if "display" not in st.session_state:
     st.session_state.display = ""
+if "history" not in st.session_state:
+    st.session_state.history = []
 
 # -----------------------------------
 # Helper Functions
@@ -60,11 +62,9 @@ def backspace():
 
 def evaluate():
     expr = st.session_state.display
-    expr = expr.replace("^", "**")
-    expr = expr.replace("π", "math.pi").replace("√", "math.sqrt")
-
+    expr = expr.replace("^", "**").replace("π", "math.pi").replace("√", "math.sqrt")
     try:
-        # Safe evaluation scope
+        # Safe math environment
         allowed = {
             "sin": lambda x: math.sin(math.radians(x)),
             "cos": lambda x: math.cos(math.radians(x)),
@@ -85,8 +85,14 @@ def evaluate():
         }
         result = eval(expr, {"__builtins__": None}, allowed)
         st.session_state.display = str(result)
+        # Store in history (limit 5)
+        st.session_state.history.insert(0, f"{expr} = {result}")
+        st.session_state.history = st.session_state.history[:5]
     except Exception:
         st.session_state.display = "Error"
+
+def recall_expression(expression):
+    st.session_state.display = expression.split("=")[0].strip()
 
 # -----------------------------------
 # Display Screen
@@ -94,9 +100,9 @@ def evaluate():
 st.text_input("Display", value=st.session_state.display, key="display_box", disabled=True)
 
 # -----------------------------------
-# Buttons Layout
+# Calculator Buttons Layout
 # -----------------------------------
-button_layout = [
+buttons = [
     ["sin(", "cos(", "tan(", "log("],
     ["ln(", "√(", "(", ")"],
     ["7", "8", "9", "/"],
@@ -107,7 +113,7 @@ button_layout = [
     ["C", "⌫"]
 ]
 
-for row in button_layout:
+for row in buttons:
     cols = st.columns(4)
     for i, label in enumerate(row):
         if label == "=":
@@ -124,9 +130,24 @@ for row in button_layout:
             cols[i].button("π", on_click=append, args=("π",))
         elif label == "e":
             cols[i].button("e", on_click=append, args=("e",))
-        elif label:
+        else:
             cols[i].button(label, on_click=append, args=(label,))
 
+# -----------------------------------
+# Replay History Section
+# -----------------------------------
+st.divider()
+st.subheader("🧠 Replay Memory (Last 5 Calculations)")
+
+if len(st.session_state.history) == 0:
+    st.caption("No previous calculations yet.")
+else:
+    for i, entry in enumerate(st.session_state.history):
+        cols = st.columns([8, 1])
+        cols[0].markdown(f"`{entry}`")
+        cols[1].button("↩", key=f"recall_{i}", on_click=recall_expression, args=(entry,))
+
 st.caption("Mode: Degrees | Supports sin, cos, tan, log, ln, sqrt, factorial, π, e, powers, etc.")
+
 
 
