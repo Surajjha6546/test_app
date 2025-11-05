@@ -101,3 +101,4 @@ else:
         c2.button("↩",key=f"recall_{i}",on_click=partial(recall,entry))
 
 
+
