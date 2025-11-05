@@ -1,115 +1,155 @@
-import streamlit as st
 import math
+import streamlit as st
+from functools import partial
 
-# ---------------- CONFIG ----------------
-st.set_page_config(page_title="Casio fx-991EX", page_icon="🧮", layout="centered")
+# ────────────────── Page & Theme ──────────────────
+st.set_page_config(page_title="Casio fx-991EX (Streamlit)", page_icon="🧮", layout="centered")
 
 st.markdown("""
 <style>
-body {background: linear-gradient(135deg,#0f2027,#203a43,#2c5364);color:white;}
-.calc-container {max-width:380px;margin:auto;padding:1rem;border-radius:20px;background:#111;box-shadow:0 0 20px #00ff99;}
-.display {background:#000;color:#0f0;font-size:28px;text-align:right;padding:10px;border-radius:10px;margin-bottom:15px;}
-button {width:100%;height:55px;font-size:18px;border:none;border-radius:8px;margin:3px;}
-.btn-func {background:#444;color:#0ff;}
-.btn-op {background:#00ff99;color:#000;font-weight:bold;}
-.btn-num {background:#222;color:#fff;}
-.btn-special {background:#ff4444;color:white;}
-.btn-equal {background:#0f0;color:black;font-weight:bold;}
+/* container */
+.calc {
+  max-width: 420px; margin: 24px auto; padding: 16px;
+  background: #0f1115; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,.5);
+  border: 1px solid #1f2430;
+}
+/* display */
+.display {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #0b0d10; color: #d9f99d;
+  border: 1px solid #242b36; border-radius: 12px;
+  padding: 14px 12px; text-align: right; font-size: 28px;
+  overflow-x: auto; white-space: nowrap;
+}
+/* subtle caption */
+.caption { color: #9aa4b2; font-size: 12px; margin-top: 4px; text-align: right; }
+/* tighten default buttons */
+button[kind="secondary"] {
+  height: 48px; border-radius: 10px; font-weight: 600;
+}
+/* color groups */
+.btn-num   { border: 1px solid #2a3441; }
+.btn-op    { border: 1px solid #34d399; }
+.btn-func  { border: 1px solid #60a5fa; }
+.btn-eq    { border: 1px solid #a7f3d0; }
+.btn-danger{ border: 1px solid #fb7185; }
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- STATE ----------------
-if "display" not in st.session_state:
-    st.session_state.display = ""
-if "history" not in st.session_state:
-    st.session_state.history = []
+# ────────────────── State ──────────────────
+if "disp" not in st.session_state: st.session_state.disp = ""
+if "hist" not in st.session_state: st.session_state.hist = []   # list of "expr = result" (latest first)
 
-# ---------------- FUNCTIONS ----------------
-def press(key):
-    if key == "C":
-        st.session_state.display = ""
-    elif key == "⌫":
-        st.session_state.display = st.session_state.display[:-1]
-    elif key == "=":
-        evaluate()
-    else:
-        st.session_state.display += key
+# ────────────────── Safe eval helpers (Degree mode) ──────────────────
+ALLOWED = {
+    "sin":  lambda x: math.sin(math.radians(x)),
+    "cos":  lambda x: math.cos(math.radians(x)),
+    "tan":  lambda x: math.tan(math.radians(x)),
+    "asin": lambda x: math.degrees(math.asin(x)),
+    "acos": lambda x: math.degrees(math.acos(x)),
+    "atan": lambda x: math.degrees(math.atan(x)),
+    "sqrt": math.sqrt,
+    "log":  math.log10,
+    "ln":   math.log,
+    "exp":  math.exp,
+    "abs":  abs,
+    "fact": math.factorial,
+    "pow":  pow,
+    "pi":   math.pi,          # allows typing "pi"
+    "e":    math.e,           # allows typing "e"
+    "math": math,             # used after replacements
+}
 
-def evaluate():
-    expr = st.session_state.display
-    expr = expr.replace("^", "**").replace("π", "math.pi").replace("√", "math.sqrt")
+def _sanitize(expr: str) -> str:
+    # Friendly symbols → executable
+    return (
+        expr.replace("π", "math.pi")
+            .replace("√", "math.sqrt")
+            .replace("^", "**")
+    )
+
+def eval_now() -> None:
+    raw = st.session_state.disp.strip()
+    if not raw:
+        return
+    expr = _sanitize(raw)
     try:
-        allowed = {
-            "sin": lambda x: math.sin(math.radians(x)),
-            "cos": lambda x: math.cos(math.radians(x)),
-            "tan": lambda x: math.tan(math.radians(x)),
-            "asin": lambda x: math.degrees(math.asin(x)),
-            "acos": lambda x: math.degrees(math.acos(x)),
-            "atan": lambda x: math.degrees(math.atan(x)),
-            "sqrt": math.sqrt,
-            "log": math.log10,
-            "ln": math.log,
-            "exp": math.exp,
-            "pi": math.pi,
-            "e": math.e,
-            "abs": abs,
-            "fact": math.factorial,
-            "pow": pow,
-            "math": math
-        }
-        result = eval(expr, {"__builtins__": None}, allowed)
-        st.session_state.history.insert(0, f"{expr} = {result}")
-        st.session_state.history = st.session_state.history[:5]
-        st.session_state.display = str(result)
+        result = eval(expr, {"__builtins__": None}, ALLOWED)
+        # store history (cap 8)
+        st.session_state.hist.insert(0, f"{raw} = {result}")
+        st.session_state.hist = st.session_state.hist[:8]
+        st.session_state.disp = str(result)
     except Exception:
-        st.session_state.display = "Error"
+        st.session_state.disp = "Error"
+    st.rerun()
 
-# ---------------- UI ----------------
-st.markdown("<div class='calc-container'>", unsafe_allow_html=True)
-st.markdown(f"<div class='display'>{st.session_state.display or 0}</div>", unsafe_allow_html=True)
+def press(text: str) -> None:
+    # Basic input guard: if last result was "Error", start fresh
+    if st.session_state.disp == "Error":
+        st.session_state.disp = ""
+    st.session_state.disp += text
+    st.rerun()
 
-# Button grid
-layout = [
-    ["sin(", "cos(", "tan(", "log("],
-    ["ln(", "√(", "(", ")"],
-    ["7", "8", "9", "/"],
-    ["4", "5", "6", "*"],
-    ["1", "2", "3", "-"],
-    ["0", ".", "^", "+"],
-    ["π", "e", "x!", "="],
-    ["C", "⌫"]
+def backspace() -> None:
+    st.session_state.disp = st.session_state.disp[:-1]
+    st.rerun()
+
+def clear_all() -> None:
+    st.session_state.disp = ""
+    st.rerun()
+
+def recall(entry: str) -> None:
+    # take the left side of "expr = result"
+    st.session_state.disp = entry.split("=", 1)[0].strip()
+    st.rerun()
+
+# ────────────────── UI: Display ──────────────────
+st.markdown("<div class='calc'>", unsafe_allow_html=True)
+st.markdown(f"<div class='display'>{st.session_state.disp or '0'}</div>", unsafe_allow_html=True)
+st.markdown("<div class='caption'>Mode: Degrees • sin, cos, tan, asin, acos, atan, log, ln, √, ^, !, π, e</div>", unsafe_allow_html=True)
+st.write("")
+
+# ────────────────── UI: Keypad ──────────────────
+# label, payload, style
+rows = [
+    # functions
+    [("sin", "sin(", "btn-func"), ("cos", "cos(", "btn-func"), ("tan", "tan(", "btn-func"), ("log", "log(", "btn-func")],
+    [("ln",  "ln(",  "btn-func"), ("√",   "√(",  "btn-func"), ("(",   "(",   "btn-func"), (")",   ")",   "btn-func")],
+    # numbers/operators
+    [("7","7","btn-num"), ("8","8","btn-num"), ("9","9","btn-num"), ("/","/","btn-op")],
+    [("4","4","btn-num"), ("5","5","btn-num"), ("6","6","btn-num"), ("*","*","btn-op")],
+    [("1","1","btn-num"), ("2","2","btn-num"), ("3","3","btn-num"), ("-","-","btn-op")],
+    [("0","0","btn-num"), (".",".","btn-num"), ("^","^","btn-op"),  ("+","+", "btn-op")],
+    # constants / factorial / equals
+    [("π","π","btn-func"), ("e","e","btn-func"), ("x!","fact(","btn-func"), ("=","=","btn-eq")],
+    # clear / backspace
+    [("C","C","btn-danger"), ("⌫","⌫","btn-danger")],
 ]
 
-for row in layout:
+for r, row in enumerate(rows):
     cols = st.columns(len(row))
-    for i, label in enumerate(row):
-        style = "btn-num"
-        if label in ["sin(", "cos(", "tan(", "log(", "ln(", "√(", "π", "e", "x!"]:
-            style = "btn-func"
-        elif label in ["+", "-", "*", "/", "^"]:
-            style = "btn-op"
-        elif label == "=":
-            style = "btn-equal"
-        elif label in ["C", "⌫"]:
-            style = "btn-special"
-        cols[i].markdown(f"<button class='{style}' onClick='window.location.reload()'>{label}</button>", unsafe_allow_html=True)
-        if st.button(label, key=label):
-            if label == "x!":
-                press("fact(")
-            else:
-                press(label)
+    for c, (label, payload, style) in enumerate(row):
+        key = f"k_{r}_{c}_{label}"
+        # Visual tag by injecting a tiny styled label before the Streamlit button
+        cols[c].markdown(f"<div class='{style}' style='margin-bottom:4px'></div>", unsafe_allow_html=True)
+        if label == "=":
+            cols[c].button(label, key=key, on_click=eval_now)
+        elif label == "C":
+            cols[c].button(label, key=key, on_click=clear_all)
+        elif label == "⌫":
+            cols[c].button(label, key=key, on_click=backspace)
+        else:
+            cols[c].button(label, key=key, on_click=partial(press, payload))
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ---------------- HISTORY ----------------
-st.divider()
-st.subheader("🧠 Replay Memory")
-if not st.session_state.history:
-    st.caption("No calculations yet.")
-else:
-    for entry in st.session_state.history:
-        cols = st.columns([6, 1])
-        cols[0].markdown(f"`{entry}`")
-        if cols[1].button("↩", key=f"recall_{entry}"):
-            st.session_state.display = entry.split("=")[0].strip()
-            st.experimental_rerun()
+# ────────────────── UI: Replay History ──────────────────
+with st.expander("🧠 Replay (last 8)"):
+    if not st.session_state.hist:
+        st.caption("No calculations yet.")
+    else:
+        for i, entry in enumerate(st.session_state.hist):
+            c1, c2 = st.columns([0.85, 0.15])
+            c1.code(entry, language="text")
+            c2.button("↩", key=f"recall_{i}", on_click=partial(recall, entry))
+
