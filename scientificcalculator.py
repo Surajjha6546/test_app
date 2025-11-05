@@ -2,16 +2,19 @@ import streamlit as st
 import math
 from functools import partial
 
-# ─────────────────────────────────────
-# PAGE + THEME
-# ─────────────────────────────────────
+# ───────────────────────────────────────────────
+# PAGE CONFIG
+# ───────────────────────────────────────────────
 st.set_page_config(page_title="Casio fx-991EX | Streamlit", page_icon="🧮", layout="centered")
 
+# ───────────────────────────────────────────────
+# THEME & STYLING
+# ───────────────────────────────────────────────
 st.markdown("""
 <style>
 body {background: radial-gradient(circle at 30% 10%, #0b0f17 0%, #0a0d12 100%);}
 .calc {
-  max-width: 460px; margin: 40px auto; padding: 20px 20px 12px;
+  max-width: 460px; margin: 40px auto; padding: 20px;
   background: linear-gradient(180deg,#0d141f,#0a111a);
   border-radius: 20px; border: 1px solid #1a2538;
   box-shadow: 0 0 30px rgba(0,255,213,.3);
@@ -33,20 +36,22 @@ button[kind="secondary"] {
 .eq   button[kind="secondary"] {border-color:#a8fddc;}
 .dng  button[kind="secondary"] {border-color:#ff5f6a;}
 .mem  button[kind="secondary"] {border-color:#ffaa00;}
+.shift button[kind="secondary"] {border-color:#f1ff5e; color:#f8fa9d;}
 </style>
 """, unsafe_allow_html=True)
 
-# ─────────────────────────────────────
-# STATE
-# ─────────────────────────────────────
+# ───────────────────────────────────────────────
+# STATE VARIABLES
+# ───────────────────────────────────────────────
 if "disp" not in st.session_state: st.session_state.disp = ""
-if "mem" not in st.session_state:  st.session_state.mem  = 0.0
-if "mode" not in st.session_state: st.session_state.mode = "DEG"  # DEG or RAD
-if "mem_log" not in st.session_state: st.session_state.mem_log = []  # memory recall log
+if "mem" not in st.session_state: st.session_state.mem = 0.0
+if "mode" not in st.session_state: st.session_state.mode = "DEG"
+if "shift" not in st.session_state: st.session_state.shift = False
+if "mem_log" not in st.session_state: st.session_state.mem_log = []
 
-# ─────────────────────────────────────
-# SAFE MATH + SANITIZER
-# ─────────────────────────────────────
+# ───────────────────────────────────────────────
+# SAFE EVAL HELPERS
+# ───────────────────────────────────────────────
 def trig_wrap(fn):
     if st.session_state.mode == "RAD":
         return lambda x: getattr(math, fn)(x)
@@ -69,9 +74,9 @@ def sanitize(expr:str)->str:
                 .replace("×","*")
                 .replace("÷","/"))
 
-# ─────────────────────────────────────
-# ACTIONS
-# ─────────────────────────────────────
+# ───────────────────────────────────────────────
+# BUTTON ACTIONS
+# ───────────────────────────────────────────────
 def press(x):
     if st.session_state.disp == "Error": st.session_state.disp = ""
     st.session_state.disp += x
@@ -98,7 +103,11 @@ def toggle_mode():
     st.session_state.mode = "RAD" if st.session_state.mode == "DEG" else "DEG"
     st.rerun()
 
-# Memory controls
+def toggle_shift():
+    st.session_state.shift = not st.session_state.shift
+    st.rerun()
+
+# Memory Functions
 def mem_add():
     try:
         val = eval(sanitize(st.session_state.disp or "0"), {"__builtins__": None}, ALLOWED)
@@ -125,42 +134,54 @@ def mem_recall():
     st.session_state.mem_log.insert(0, f"MR → {st.session_state.mem}")
     st.rerun()
 
-# ─────────────────────────────────────
-# UI STRUCTURE
-# ─────────────────────────────────────
+# ───────────────────────────────────────────────
+# UI CONTAINER
+# ───────────────────────────────────────────────
 st.markdown("<div class='calc'>", unsafe_allow_html=True)
-st.markdown("<div class='brand'>CASIO fx-991EX | Professional</div>", unsafe_allow_html=True)
+st.markdown("<div class='brand'>CASIO fx-991EX | Streamlit Edition</div>", unsafe_allow_html=True)
 st.markdown(f"<div class='display'>{st.session_state.disp or '0'}</div>", unsafe_allow_html=True)
 st.markdown(
-    f"<div class='mem-status'>Mode: {st.session_state.mode} | Memory: {st.session_state.mem:.4g}</div>",
-    unsafe_allow_html=True
-)
+    f"<div class='mem-status'>Mode: {st.session_state.mode} | "
+    f"SHIFT: {'ON' if st.session_state.shift else 'OFF'} | "
+    f"Memory: {st.session_state.mem:.4g}</div>", unsafe_allow_html=True)
 
+# ───────────────────────────────────────────────
+# SHIFT FUNCTION MAPPING
+# ───────────────────────────────────────────────
+shift_map = {
+    "sin(": "asin(", "cos(": "acos(", "tan(": "atan(",
+    "log(": "10**", "ln(": "exp(", "√(": "^2", "π": "e"
+}
+
+def shifted(symbol):
+    return shift_map.get(symbol, symbol)
+
+# ───────────────────────────────────────────────
+# BUTTON GRID
+# ───────────────────────────────────────────────
 def row(buttons, cls=""):
     cols = st.columns(4)
     for i, (lbl, fn, key) in enumerate(buttons):
         if lbl == "": continue
         with cols[i]:
-            cdiv = f"<div class='{cls}'>" 
-            st.markdown(cdiv, unsafe_allow_html=True)
             st.button(lbl, key=key, on_click=fn)
 
 # Memory row
 row([("MC", mem_clear, "MC"), ("MR", mem_recall, "MR"),
      ("M+", mem_add, "M+"), ("M−", mem_sub, "M-")], "mem")
 
-# Functions
-row([("sin(", partial(press,"sin("), "sin"),
-     ("cos(", partial(press,"cos("), "cos"),
-     ("tan(", partial(press,"tan("), "tan"),
-     ("√(", partial(press,"√("), "sqrt")], "func")
+# Function rows (use SHIFT layer)
+row([(shifted("sin(") if st.session_state.shift else "sin(", partial(press, shifted("sin(") if st.session_state.shift else "sin("), "sin"),
+     (shifted("cos(") if st.session_state.shift else "cos(", partial(press, shifted("cos(") if st.session_state.shift else "cos("), "cos"),
+     (shifted("tan(") if st.session_state.shift else "tan(", partial(press, shifted("tan(") if st.session_state.shift else "tan("), "tan"),
+     (shifted("√(") if st.session_state.shift else "√(", partial(press, shifted("√(") if st.session_state.shift else "√("), "sqrt")], "func")
 
-row([("log(", partial(press,"log("), "log"),
-     ("ln(", partial(press,"ln("), "ln"),
+row([(shifted("log(") if st.session_state.shift else "log(", partial(press, shifted("log(") if st.session_state.shift else "log("), "log"),
+     (shifted("ln(") if st.session_state.shift else "ln(", partial(press, shifted("ln(") if st.session_state.shift else "ln("), "ln"),
      ("(", partial(press,"("), "("),
      (")", partial(press,")"), ")")], "func")
 
-# Digits & ops (operators shown as symbols but compute as Python)
+# Numeric + operator keys (with + fixed)
 row([("7", partial(press,"7"), "7"),
      ("8", partial(press,"8"), "8"),
      ("9", partial(press,"9"), "9"),
@@ -181,24 +202,23 @@ row([("0", partial(press,"0"), "0"),
      ("^", partial(press,"^"), "^"),
      ("+", partial(press,"+"), "add")], "op")
 
-# constants / factorial / equals
-row([("π", partial(press,"π"), "pi"),
+# Constants & equals
+row([(shifted("π") if st.session_state.shift else "π", partial(press, shifted("π") if st.session_state.shift else "π"), "pi"),
      ("e", partial(press,"e"), "e"),
      ("!", partial(press,"fact("), "fact"),
      ("=", evaluate, "eq")], "eq")
 
-# last row
+# Control buttons bottom row
 row([("C", clear, "C"),
      ("⌫", backspace, "back"),
-     (f"{st.session_state.mode}", toggle_mode, "mode"),
-     ("MR Log", lambda: None, "logbtn")], "dng")
+     ("SHIFT", toggle_shift, "shift"),
+     (f"{st.session_state.mode}", toggle_mode, "mode")], "dng")
 
+# Inline MR Log (static under calculator)
 st.markdown("</div>", unsafe_allow_html=True)
-
-# Memory recall log (visible scroll)
-with st.expander("🧠 Memory Recall History"):
-    if st.session_state.mem_log:
-        for entry in st.session_state.mem_log[:10]:
-            st.write(entry)
-    else:
-        st.caption("No memory actions yet.")
+st.subheader("🧠 Memory Recall Log (Last 5):")
+if st.session_state.mem_log:
+    for entry in st.session_state.mem_log[:5]:
+        st.write(f"• {entry}")
+else:
+    st.caption("No memory actions yet.")
