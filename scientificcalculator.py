@@ -1,161 +1,146 @@
 import streamlit as st
 import math
-from functools import partial
 
-# ---------------- CONFIG ----------------
+# -------------------------------------------------------
+# PAGE + STYLE
+# -------------------------------------------------------
 st.set_page_config(page_title="Casio fx-991EX | Streamlit", page_icon="🧮", layout="centered")
 
 st.markdown("""
 <style>
 body {background: radial-gradient(circle at 25% 15%, #0b0f17 0%, #0a0d12 100%);}
-.calc {
-  max-width:460px;margin:40px auto;padding:20px;
-  background:linear-gradient(180deg,#0d141f,#0a111a);
-  border-radius:20px;border:1px solid #1a2538;
-  box-shadow:0 0 30px rgba(0,255,213,.3);
-}
-.brand{text-align:center;color:#00ffd5;font-weight:800;font-size:20px;
-margin-bottom:10px;text-shadow:0 0 8px #00ffd5;}
-.display{background:#000;color:#00ff9d;font-family:Consolas,monospace;
-font-size:30px;text-align:right;border-radius:10px;padding:12px;
-margin-bottom:8px;overflow-x:auto;border:1px solid #111;}
-.info{font-size:13px;color:#7ee7ff;text-align:right;margin-bottom:10px;}
-button[kind="secondary"]{
-  height:48px;border-radius:10px;font-weight:600;
-  border:1px solid #1c2636;color:#e8f9ff;background:#121a27;}
-.op   button[kind="secondary"]{border-color:#00ffa2;}
-.func button[kind="secondary"]{border-color:#66a3ff;}
-.eq   button[kind="secondary"]{border-color:#a8fddc;}
-.dng  button[kind="secondary"]{border-color:#ff5f6a;}
-.mem  button[kind="secondary"]{border-color:#ffaa00;}
-.shift button[kind="secondary"]{border-color:#f1ff5e;color:#f8fa9d;}
+h1 {text-align:center;color:#00ffaa;text-shadow:0 0 10px #00ffaa;}
+.calc {max-width:480px;margin:auto;padding:15px 20px 20px;border-radius:20px;
+background:linear-gradient(180deg,#0e141f,#0a111a);box-shadow:0 0 25px rgba(0,255,213,.25);}
+input[type=text] {font-size:20px !important;height:3em !important;text-align:right;}
+button[kind="secondary"]{height:52px;font-weight:700;border-radius:10px;}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- STATE ----------------
-if "disp" not in st.session_state: st.session_state.disp = ""
-if "mem" not in st.session_state: st.session_state.mem = 0.0
-if "mode" not in st.session_state: st.session_state.mode = "DEG"
-if "shift" not in st.session_state: st.session_state.shift = False
-if "history" not in st.session_state: st.session_state.history = []  # calculation recall
+# -------------------------------------------------------
+# STATE INITIALIZATION
+# -------------------------------------------------------
+expr    = st.session_state.get("expr", "")
+memory  = st.session_state.get("memory", 0.0)
+ans     = st.session_state.get("ans", 0.0)
+history = st.session_state.get("history", [])
+mode    = st.session_state.get("mode", "DEG")
 
-# ---------------- SAFE MATH ----------------
-def trig_wrap(fn):
-    if st.session_state.mode == "RAD":
-        return lambda x: getattr(math, fn)(x)
-    return lambda x: getattr(math, fn)(math.radians(x))
+# -------------------------------------------------------
+# MATH HELPERS
+# -------------------------------------------------------
+def tsin(x): return math.sin(math.radians(x)) if mode == "DEG" else math.sin(x)
+def tcos(x): return math.cos(math.radians(x)) if mode == "DEG" else math.cos(x)
+def ttan(x): return math.tan(math.radians(x)) if mode == "DEG" else math.tan(x)
+def nPr(n, r): return math.factorial(int(n)) // math.factorial(int(n) - int(r))
+def nCr(n, r): return math.comb(int(n), int(r))
 
-ALLOWED = {
-    "sin": trig_wrap("sin"), "cos": trig_wrap("cos"), "tan": trig_wrap("tan"),
-    "asin": lambda x: math.degrees(math.asin(x)) if st.session_state.mode=="DEG" else math.asin(x),
-    "acos": lambda x: math.degrees(math.acos(x)) if st.session_state.mode=="DEG" else math.acos(x),
-    "atan": lambda x: math.degrees(math.atan(x)) if st.session_state.mode=="DEG" else math.atan(x),
-    "sqrt": math.sqrt, "log": math.log10, "ln": math.log, "exp": math.exp,
-    "abs": abs, "fact": math.factorial, "pow": pow,
-    "pi": math.pi, "e": math.e, "math": math
-}
-
-def sanitize(expr):
-    return (expr.replace("π","math.pi")
-                .replace("√","math.sqrt")
-                .replace("^","**")
-                .replace("×","*")
-                .replace("÷","/"))
-
-# ---------------- ACTIONS ----------------
-def press(x):
-    if st.session_state.disp == "Error": st.session_state.disp = ""
-    st.session_state.disp += x
-    st.rerun()
-
-def clear(): st.session_state.disp = ""; st.rerun()
-def back(): st.session_state.disp = st.session_state.disp[:-1]; st.rerun()
-def toggle_mode(): st.session_state.mode = "RAD" if st.session_state.mode=="DEG" else "DEG"; st.rerun()
-def toggle_shift(): st.session_state.shift = not st.session_state.shift; st.rerun()
-
-def evaluate():
-    expr = sanitize(st.session_state.disp.strip())
-    if not expr: return
+# -------------------------------------------------------
+# EVALUATION
+# -------------------------------------------------------
+def evaluate_expression(expr):
     try:
-        result = eval(expr, {"__builtins__": None}, ALLOWED)
-        st.session_state.history.insert(0, f"{expr} = {result}")
-        st.session_state.history = st.session_state.history[:8]
-        st.session_state.disp = str(result)
-    except Exception:
-        st.session_state.disp = "Error"
-    st.rerun()
+        expr = (expr.replace("×","*").replace("÷","/").replace("^","**").replace("%","/100")
+                    .replace("√","math.sqrt").replace("π","math.pi").replace("e","math.e")
+                    .replace("sin","tsin").replace("cos","tcos").replace("tan","ttan")
+                    .replace("ln","math.log").replace("log","math.log10")
+                    .replace("nPr","nPr").replace("nCr","nCr")
+                    .replace("Ans", str(ans)))
+        result = eval(expr, {"math":math,"tsin":tsin,"tcos":tcos,"ttan":ttan,"nPr":nPr,"nCr":nCr})
+        return result
+    except Exception as e:
+        st.error(f"Error: {e}")
+        return None
 
-# Memory
-def mem_add():
-    try:
-        val = eval(sanitize(st.session_state.disp or "0"), {"__builtins__": None}, ALLOWED)
-        st.session_state.mem += float(val)
-    except: pass
-    st.rerun()
-def mem_sub():
-    try:
-        val = eval(sanitize(st.session_state.disp or "0"), {"__builtins__": None}, ALLOWED)
-        st.session_state.mem -= float(val)
-    except: pass
-    st.rerun()
-def mem_clear(): st.session_state.mem = 0.0; st.rerun()
-def mem_recall():
-    st.session_state.disp += str(st.session_state.mem)
-    st.rerun()
-
-# ---------------- SHIFT MAPPING ----------------
-shift_map = {"sin(": "asin(", "cos(": "acos(", "tan(": "atan(",
-             "log(": "10**", "ln(": "exp(", "√(": "^2", "π": "e"}
-
-def shifted(x): return shift_map.get(x, x)
-
-# ---------------- UI ----------------
+# -------------------------------------------------------
+# HEADER + INPUT FIELD
+# -------------------------------------------------------
 st.markdown("<div class='calc'>", unsafe_allow_html=True)
-st.markdown("<div class='brand'>CASIO fx-991EX • Streamlit</div>", unsafe_allow_html=True)
-st.markdown(f"<div class='display'>{st.session_state.disp or '0'}</div>", unsafe_allow_html=True)
-st.markdown(f"<div class='info'>Mode: {st.session_state.mode} | SHIFT: {'ON' if st.session_state.shift else 'OFF'} | Memory: {st.session_state.mem:.4g}</div>", unsafe_allow_html=True)
+st.markdown("<h1>Casio fx-991EX Scientific Calculator</h1>", unsafe_allow_html=True)
 
-def make_row(buttons, cls=""):
-    cols = st.columns(4)
-    for i,(label,fn,key) in enumerate(buttons):
-        with cols[i]:
-            st.button(label, key=key, on_click=fn)
+col1, col2 = st.columns([3,1])
+with col1:
+    expr = st.text_input("Expression", expr, label_visibility="collapsed")
+with col2:
+    if st.button(mode, use_container_width=True):
+        mode = "RAD" if mode == "DEG" else "DEG"
 
-# memory
-make_row([("MC", mem_clear, "mc"),("MR", mem_recall, "mr"),("M+", mem_add, "m+"),("M−", mem_sub, "m-")],"mem")
+st.caption(f"Memory: {round(memory,6)} | Ans: {round(ans,6)}")
 
-# trig + funcs
-make_row([(shifted("sin(") if st.session_state.shift else "sin(", partial(press, shifted("sin(") if st.session_state.shift else "sin("),"sin"),
-          (shifted("cos(") if st.session_state.shift else "cos(", partial(press, shifted("cos(") if st.session_state.shift else "cos("),"cos"),
-          (shifted("tan(") if st.session_state.shift else "tan(", partial(press, shifted("tan(") if st.session_state.shift else "tan("),"tan"),
-          (shifted("√(") if st.session_state.shift else "√(", partial(press, shifted("√(") if st.session_state.shift else "√("),"sqrt")],"func")
+# -------------------------------------------------------
+# BUTTON GRID
+# -------------------------------------------------------
+rows = [
+    ["AC","DEL","(",")","%"],
+    ["sin","cos","tan","ln","log"],
+    ["7","8","9","÷","√"],
+    ["4","5","6","×","-"],
+    ["1","2","3","+","="],
+    ["0",".","Ans","π","e"],
+    ["M+","M-","MR","MC","±"],
+    ["nCr","nPr","x²","^","!"]
+]
 
-make_row([(shifted("log(") if st.session_state.shift else "log(", partial(press, shifted("log(") if st.session_state.shift else "log("),"log"),
-          (shifted("ln(") if st.session_state.shift else "ln(", partial(press, shifted("ln(") if st.session_state.shift else "ln("),"ln"),
-          ("(", partial(press,"("), "("),
-          (")", partial(press,")"), ")")],"func")
+def process_input(label, expr, memory, ans, history):
+    if label == "AC": expr = ""
+    elif label == "DEL": expr = expr[:-1]
+    elif label == "=":
+        result = evaluate_expression(expr)
+        if result is not None:
+            ans = result
+            history.insert(0,(expr,result))
+            expr = str(result)
+    elif label == "√": expr += "√("
+    elif label == "x²": expr += "**2"
+    elif label == "±": expr += "(-"
+    elif label == "!": expr += "math.factorial("
+    elif label == "M+":
+        try: memory += float(eval(expr or "0"))
+        except: pass
+    elif label == "M-":
+        try: memory -= float(eval(expr or "0"))
+        except: pass
+    elif label == "MR": expr += str(memory)
+    elif label == "MC": memory = 0
+    else: expr += label
+    return expr, memory, ans, history
 
-# numbers & ops (unique keys so + never disappears)
-make_row([("7", partial(press,"7"), "n7"),("8", partial(press,"8"), "n8"),("9", partial(press,"9"), "n9"),("÷", partial(press,"÷"), "div")],"op")
-make_row([("4", partial(press,"4"), "n4"),("5", partial(press,"5"), "n5"),("6", partial(press,"6"), "n6"),("×", partial(press,"×"), "mul")],"op")
-make_row([("1", partial(press,"1"), "n1"),("2", partial(press,"2"), "n2"),("3", partial(press,"3"), "n3"),("−", partial(press,"−"), "sub")],"op")
-make_row([("0", partial(press,"0"), "n0"),(".", partial(press,"."), "dot"),("^", partial(press,"^"), "pow"),("+", partial(press,"+"), "plus")],"op")
+# -------------------------------------------------------
+# DRAW BUTTONS
+# -------------------------------------------------------
+for row in rows:
+    cols = st.columns(5)
+    for i, label in enumerate(row):
+        if cols[i].button(label, use_container_width=True, key=f"{row}-{label}"):
+            expr, memory, ans, history = process_input(label, expr, memory, ans, history)
+            st.session_state.expr = expr
+            st.session_state.memory = memory
+            st.session_state.ans = ans
+            st.session_state.history = history
+            st.session_state.mode = mode
+            st.rerun()
 
-# constants / eq
-make_row([(shifted("π") if st.session_state.shift else "π", partial(press, shifted("π") if st.session_state.shift else "π"), "pi"),
-          ("e", partial(press,"e"), "e"),
-          ("!", partial(press,"fact("), "fact"),
-          ("=", evaluate, "eq")],"eq")
-
-# controls bottom
-make_row([("C", clear, "clr"),("⌫", back, "bksp"),("SHIFT", toggle_shift, "shift"),(st.session_state.mode, toggle_mode, "mode")],"dng")
+# -------------------------------------------------------
+# HISTORY INLINE
+# -------------------------------------------------------
+st.markdown("### 🧮 Recent Calculations")
+if history:
+    for e, r in history[:10]:
+        st.code(f"{e} = {r}")
+else:
+    st.caption("No calculations yet.")
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ---------------- HISTORY INLINE ----------------
-st.subheader("🧠 Recent Calculations (Replay)")
-if st.session_state.history:
-    for h in st.session_state.history[:6]:
-        st.markdown(f"`{h}`")
-else:
-    st.caption("No calculations yet.")
+# -------------------------------------------------------
+# FOOTER INFO
+# -------------------------------------------------------
+st.markdown("---")
+st.markdown("""
+**Features**
+- Degree/Radian toggle for trig  
+- sin, cos, tan, ln, log, √, x², %, π, e, factorial, nCr, nPr  
+- Memory: M+, M-, MR, MC  
+- Ans recall and 10-step calculation history  
+- Works perfectly on Streamlit Cloud/Desktop  
+""")
